@@ -13,11 +13,11 @@ app.add_middleware(
 )
 
 @app.post("/package")
-def register_package(body: function.PackageIn, token=Header(None)):
+def register_package(p: function.PackageIn, token=Header(None)):
     username = function.verify_token(token=token,token_type="access")
     if not username:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
-    return function.register_package(body.name, body.destination, body.weight, body.arrival_date, body.status)
+    return function.register_package(p.name, p.destination, p.weight, p.arrival_date, p.status)
 
 @app.get("/package/{id}")
 def get_package(id,token=Header(None)):
@@ -27,18 +27,18 @@ def get_package(id,token=Header(None)):
     return function.get_package(id)
 
 @app.get("/package")
-def search(destination,status,arrival_date,token=Header(None)):
+def search(destination=None,status=None,arrival_date=None,token=Header(None)):
     username = function.verify_token(token=token,token_type="access")
     if not username:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
     return function.search_pack(destination,status,arrival_date)
 
 @app.patch("/package/{id}")
-def update_package(id: int,name,destination,weight:int,arrival_date,status,token=Header(None)):
+def update_package(id: int,u: function.PackageUpdate,token=Header(None)):
     username = function.verify_token(token=token,token_type="access")
     if not username:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
-    return function.update_pack(id=id,name=name,destination=destination,weight=weight,arrival_date=arrival_date,status=status)
+    return function.update_pack(id=id,name=u.name,destination=u.destination,weight=u.weight,arrival_date=u.arrival_date,status=u.status)
 
 # @app.post("/package")
 # def register_package(name,destination,weight:int,arrival_date,status,token=Header(None)):
@@ -49,7 +49,7 @@ def update_package(id: int,name,destination,weight:int,arrival_date,status,token
     
 
 @app.delete("/package/{id}")
-def delete_package(id,token=Header(None)):
+def delete_package(id:int,token=Header(None)):
     username = function.verify_token(token=token,token_type="access")
     if not username:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
@@ -70,19 +70,11 @@ def get_stats(token=Header(None)):
     return function.get_package_stats()  
 
 @app.post("/dispatch")
-def add_dispatch(vehicle,destination,package_id,dstatus,token=Header(None)):
+def add_dispatch(d:function.DispatchIn,token=Header(None)):
     username = function.verify_token(token=token, token_type="access")
     if not username:
         raise HTTPException(status_code=401, detail="Invalid or Expired token")
-    return function.add_dispatch(vehicle,destination,dstatus,package_id)
-
-
-
-
-
-
-
-
+    return function.add_dispatch(d.vehicle,d.destination,d.dstatus,d.package_id)
 
 @app.post("/login")
 def login(username = Body(),password = Body()):

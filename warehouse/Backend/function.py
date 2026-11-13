@@ -8,7 +8,8 @@ from datetime import date,datetime,timedelta,timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from pydantic import BaseModel,Field,constr
+from pydantic import BaseModel,Field
+from typing import Optional
 
 ph=PasswordHasher()
 
@@ -28,10 +29,26 @@ ALGORITHM="HS256"
 
 class PackageIn(BaseModel):
     name: str
-    destination: constr(to_lower=True)
+    destination: str
     weight: int=Field(gt=0)
     arrival_date: date
-    status: constr(to_lower=True)
+    status: str
+
+class PackageUpdate(BaseModel):
+    name: Optional[str] = None
+    destination: Optional[str] = None
+    weight: Optional[int] = Field(default=None, gt=0)
+    arrival_date: Optional[date] = None
+    status: Optional[str] = None 
+
+class DispatchIn(BaseModel):
+    vehicle: str
+    destination: str
+    dstatus: str
+    pack_ids: list[int]
+
+
+        
 
 class User(Base):
     __tablename__="User"
@@ -111,10 +128,8 @@ def get_package(id):
     return response   
 
 def register_package(name,destination,weight,arrival_date,status):
-    # try:
-    #     arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
-    # except :
-    #     raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD")
+    destination.lower()
+    status.lower()
     session=Session(engine)
     package=Package(name=name,destination=destination,weight=weight,arrival_date=arrival_date,status=status)
     session.add(package)
@@ -141,15 +156,11 @@ def update_pack(id,name=None,destination=None,weight=None,arrival_date=None,stat
     if name is not None:
         package.name=name
     if destination is not None:    
-        package.destination=destination
+        package.destination=destination.lower()
     if weight is not None:    
         package.weight=weight
     if arrival_date is not None:
-        try:
-            package.arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
-        except :
-            session.close()
-            raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD")    
+        package.arrival_date=arrival_date   
     if status is not None:    
         package.status=status
     
@@ -191,17 +202,14 @@ def delete_package(id):
 
 
 def search_pack(destination,status,arrival_date):
-    try:
-        arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD") 
+  
     session=Session(engine)
     
     packages=session.query(Package).all()       
     response=[]
     for package in packages:
-        if ((destination is None or package.destination==destination) and 
-            (status is None or package.status==status) and 
+        if ((destination is None or package.destination==destination.lower()) and 
+            (status is None or package.status==status.lower) and 
             (arrival_date is None or package.arrival_date==arrival_date)):  
             res={
                     "id":package.id,
@@ -225,8 +233,8 @@ def get_batch(destination=None,vehicle=None,dstatus=None):
         packs=session.query(Package).filter(Package.d_id==dispatch.id).all()
         for p in packs:
             id.append(p.id)
-        if ((destination is None or dispatch.destination==destination) and 
-                (dstatus is None or dispatch.dstatus==dstatus) and 
+        if ((destination is None or dispatch.destination==destination.lower()) and 
+                (dstatus is None or dispatch.dstatus==dstatus.lower) and 
                 (vehicle is None or dispatch.vehicle==vehicle)):
             res={
                  "id":dispatch.id,
@@ -260,8 +268,9 @@ def get_package_stats():
     }
     return responce
 
-def add_dispatch(vehicle,destination,dstatus,package_id):
-    id=package_id
+def add_dispatch(vehicle,destination,dstatus,package_ids):
+    destination.lower()
+    dstatus.lower()
     session=Session(engine)
     package=session.get(Package,id)
     if package is None:
@@ -277,14 +286,17 @@ def add_dispatch(vehicle,destination,dstatus,package_id):
     dispatch=Dispatch(vehicle=vehicle ,destination=destination,dstatus=dstatus)
     session.add(dispatch)
     session.commit()  
-    package.d_id=dispatch.id
-    package.status="dispatched"
-    session.commit() 
+
+    for p_id in package_ids:
+        package=session.get(Package,p_id)
+        package.d_id=dispatch.id
+        package.status="dispatched"
+    session.commit()       
     response={
         "id":dispatch.id,
         "vehicle":dispatch.vehicle,
         "destination":dispatch.destination,
-        "package_id":package.id
+        "package_id":package.ids
     }  
     session.close()
     return response
@@ -328,10 +340,6 @@ def verify_token(token,token_type):
     if payload["token_type"]==token_type:
         return payload["username"]
     return False
-
-
-
-
 
 
 def register_user(username,password,user_type):
