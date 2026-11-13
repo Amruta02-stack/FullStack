@@ -45,7 +45,7 @@ class DispatchIn(BaseModel):
     vehicle: str
     destination: str
     dstatus: str
-    pack_ids: list[int]
+    package_ids: list[int]=Field(min_length=1)
 
 
         
@@ -128,8 +128,8 @@ def get_package(id):
     return response   
 
 def register_package(name,destination,weight,arrival_date,status):
-    destination.lower()
-    status.lower()
+    destination=destination.lower()
+    status=status.lower()
     session=Session(engine)
     package=Package(name=name,destination=destination,weight=weight,arrival_date=arrival_date,status=status)
     session.add(package)
@@ -162,7 +162,7 @@ def update_pack(id,name=None,destination=None,weight=None,arrival_date=None,stat
     if arrival_date is not None:
         package.arrival_date=arrival_date   
     if status is not None:    
-        package.status=status
+        package.status=status.lower()
     
     session.commit()
 
@@ -209,7 +209,7 @@ def search_pack(destination,status,arrival_date):
     response=[]
     for package in packages:
         if ((destination is None or package.destination==destination.lower()) and 
-            (status is None or package.status==status.lower) and 
+            (status is None or package.status==status.lower()) and 
             (arrival_date is None or package.arrival_date==arrival_date)):  
             res={
                     "id":package.id,
@@ -220,6 +220,7 @@ def search_pack(destination,status,arrival_date):
                     "status":package.status,
                     }
             response.append(res)
+            
     session.close()
     return response
 
@@ -234,7 +235,7 @@ def get_batch(destination=None,vehicle=None,dstatus=None):
         for p in packs:
             id.append(p.id)
         if ((destination is None or dispatch.destination==destination.lower()) and 
-                (dstatus is None or dispatch.dstatus==dstatus.lower) and 
+                (dstatus is None or dispatch.dstatus==dstatus.lower()) and 
                 (vehicle is None or dispatch.vehicle==vehicle)):
             res={
                  "id":dispatch.id,
@@ -263,25 +264,26 @@ def get_package_stats():
     responce={
         "total_Package":total_pack,
         "Pending_Package":pending,
-        "Dispatched_Paackage":dispatched,
+        "Dispatched_Package":dispatched,
         "Destination_count":counts
     }
     return responce
 
 def add_dispatch(vehicle,destination,dstatus,package_ids):
-    destination.lower()
-    dstatus.lower()
+    destination=destination.lower()
+    dstatus=dstatus.lower()
     session=Session(engine)
-    package=session.get(Package,id)
-    if package is None:
-        session.close()
-        raise HTTPException(status_code=404,detail="Package not found")
-    if package.status == "dispatched":
-        session.close()
-        raise HTTPException(status_code=409,detail="Package already dispatched")
-    if package.destination!= destination:
-        session.close()
-        raise HTTPException(status_code=400,detail="bad request destination")
+    for p_id in package_ids:
+        package=session.get(Package,p_id)
+        if package is None:
+            session.close()
+            raise HTTPException(status_code=404,detail="Package not found")
+        if package.status == "dispatched":
+            session.close()
+            raise HTTPException(status_code=409,detail="Package already dispatched")
+        if package.destination!= destination:
+            session.close()
+            raise HTTPException(status_code=400,detail="bad request destination")
 
     dispatch=Dispatch(vehicle=vehicle ,destination=destination,dstatus=dstatus)
     session.add(dispatch)
@@ -296,7 +298,8 @@ def add_dispatch(vehicle,destination,dstatus,package_ids):
         "id":dispatch.id,
         "vehicle":dispatch.vehicle,
         "destination":dispatch.destination,
-        "package_id":package.ids
+        "dstatus":dispatch.dstatus,
+        "package_id":package_ids
     }  
     session.close()
     return response
@@ -313,18 +316,20 @@ def verify_login(username,password):
     except VerifyMismatchError:
         session.close()
         return False
+    
+    access_token=creat_token(username=username,user_type=user.user_type,token_type="access")
+    refresh_token=creat_token(username=username,user_type=user.user_type,token_type="refresh")
     session.close()
-    access_token=creat_token(username=username,token_type="access")
-    refresh_token=creat_token(username=username,token_type="refresh")
     return {"access_token":access_token,"refresh_token":refresh_token}
     
-def creat_token(username,token_type):
+def creat_token(username,user_type,token_type):
     time =ACCEESS_TOKEN_EXPIRY
     if token_type =="refresh":
         time=REFRESH_TOKEN_EXPIRY
     payload={
         "username":username,
         "token_type":token_type,
+        "user_type":user_type,
         "exp": datetime.now(timezone.utc)+timedelta(minutes=time),
     }
     token = jwt.encode(payload=payload, key = SECRET_KEY,algorithm=ALGORITHM)
@@ -338,17 +343,19 @@ def verify_token(token,token_type):
         return False
 
     if payload["token_type"]==token_type:
-        return payload["username"]
+        return payload
     return False
 
 
 def register_user(username,password,user_type):
+    if user_type not in ["owner","dispatcher"]:
+            raise HTTPException(status_code=422,detail="incorrect user type")
     session = Session(engine)
     user=session.query(User).filter_by(username=username).first()
     if user is not None:
         session.close()
         return False
-    session.add(User(username=username,password=ph.hash(password),user_type=user_type))
+    session.add(User(username=username,password=ph.hash(password),user_type=user_type.lower()))
     session.commit()
     session.close()
     return True
