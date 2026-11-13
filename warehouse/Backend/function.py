@@ -1,16 +1,48 @@
-from sqlalchemy import create_engine,Integer,String,Date,Column,Foreignkey
+#Token JWT
+#hashing to encode the password in the DB "Salt" will make sure that different ppl will have different code
 
+from sqlalchemy import create_engine,Integer,String,Date,Column,ForeignKey
 from sqlalchemy.orm import Session,declarative_base
 from fastapi import FastAPI,HTTPException
-from datetime import date,datetime,timedelta
+from datetime import date,datetime,timedelta,timezone
+import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from pydantic import BaseModel,Field,constr
+
+ph=PasswordHasher()
 
 DB_PATH = "warehouse.db"
 
 engine = create_engine(f"sqlite:///{DB_PATH}")
 Base = declarative_base()
 
+# USERNAME="12345"
+# PASSWORD="PASS"
+ACCEESS_TOKEN_EXPIRY=5
+REFRESH_TOKEN_EXPIRY=7*24*60
+SECRET_KEY="SECRET321"
+ALGORITHM="HS256"
+
+
+
+class PackageIn(BaseModel):
+    name: str
+    destination: constr(to_lower=True)
+    weight: int=Field(gt=0)
+    arrival_date: date
+    status: constr(to_lower=True)
+
+class User(Base):
+    __tablename__="User"
+
+    user_id=Column(Integer,primary_key=True)
+    user_type=Column(String)
+    username=Column(String)
+    password=Column(String)
+    
 class Package(Base):
-    __tablename__ = "package"
+    __tablename__ = "Package"
 
     id = Column(Integer,primary_key= True)
     name=Column(String) 
@@ -18,42 +50,46 @@ class Package(Base):
     weight = Column(Integer)
     arrival_date=Column(Date)
     status = Column(String)
+    d_id=Column(Integer,ForeignKey("Dispatch.id"),nullable=True)
 
 class Dispatch(Base):
-        __tablename__ = "dispatch"
+        __tablename__ = "Dispatch"
         id = Column(Integer,primary_key= True)
-        package_id=Column(Integer,Foreignkey("package_id"))
         vehicle = Column(String)
         destination = Column(String)
         dstatus=Column(String)
+       
 
 Base.metadata.create_all(engine)
 
 def seed_data():
     session=Session(engine)
     today = date.today()
+    if session.query(Dispatch).count() ==0:
+        dispatch_record = [
+            Dispatch(id=1,vehicle="KA-23-9032",destination="mysore",dstatus="in-transit"),
+            Dispatch(id=2,vehicle="MH-03-5432",destination="kashmir",dstatus="created"),  
+            Dispatch(id=3,vehicle="DH-01-2463",destination="delhi",dstatus="delivered"),
+        ]
+        session.add_all(dispatch_record)
+        session.commit()
     if session.query(Package).count() == 0:
         package_record=[
-         Package(id=1,name="earbud",destination="bangalore",weight=2,arrival_date=today-timedelta(1),status="pending"),
+         Package(id=1,name="earbud",destination="bangalore",weight=2,arrival_date=today-timedelta(1),status="pending",),
          Package(id=2,name="Steel Bottel",destination="bangalore",weight=5,arrival_date=today-timedelta(1),status="pending"),
-         Package(id=3,name="Face Cream",destination="mysore",weight=5,arrival_date=today-timedelta(2),status="dispatched"),
-         Package(id=4,name="Toy Car",destination="kashmir",weight=2,arrival_date=today,status="dispatched"),
-         Package(id=5,name="Pen",destination="delhi",weight=7,arrival_date=today-timedelta(5),status="dispatched"),
+         Package(id=3,name="Face Cream",destination="mysore",weight=5,arrival_date=today-timedelta(2),status="dispatched",d_id=1),
+         Package(id=4,name="Toy Car",destination="kashmir",weight=2,arrival_date=today,status="dispatched",d_id=2),
+         Package(id=5,name="Pen",destination="delhi",weight=7,arrival_date=today-timedelta(5),status="dispatched",d_id=3),
          Package(id=6,name="Laptop",destination="delhi",weight=5,arrival_date=today-timedelta(3),status="pending"),
         ]
         session.add_all(package_record)
         session.commit()
-    if session.query(Dispatch).count() ==0:
-        dispatch_record = [
-            Dispatch(id=1,package_id=3,vehicle="KA-23-9032",destination="mysore",dstatus="in-transit"),
-            Dispatch(id=2,package_id=4,vehicle="MH-03-5432",destination="kashmir",dstatus="created"),  
-            Dispatch(id=3,packaage_id=5,vehicle="DH-01-2463",destination="delhi",dstatus="deleverd"),
-        ]
-        session.add_all(dispatch_record)
-        session.commit()
+
     session.close()
 
 seed_data()
+
+
 
 def get_package(id):
     session = Session(engine)
@@ -74,7 +110,11 @@ def get_package(id):
     session.close()
     return response   
 
-def registar_package(name,destination,weight,arrival_date,status):
+def register_package(name,destination,weight,arrival_date,status):
+    # try:
+    #     arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
+    # except :
+    #     raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD")
     session=Session(engine)
     package=Package(name=name,destination=destination,weight=weight,arrival_date=arrival_date,status=status)
     session.add(package)
@@ -90,17 +130,29 @@ def registar_package(name,destination,weight,arrival_date,status):
     session.close()
     return response
 
-def update_pack(id,name,destination,weight,arrival_date,status):
+def update_pack(id,name=None,destination=None,weight=None,arrival_date=None,status=None):
+    
     session=Session(engine)
+    
     package=session.get(Package,id)
     if package is None:
          session.close()
          raise HTTPException(status_code=404,detail="Package Not Found")
-    package.name=name
-    package.destination=destination
-    package.weight=weight
-    package.arrival_date=arrival_date
-    package.status=status
+    if name is not None:
+        package.name=name
+    if destination is not None:    
+        package.destination=destination
+    if weight is not None:    
+        package.weight=weight
+    if arrival_date is not None:
+        try:
+            package.arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
+        except :
+            session.close()
+            raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD")    
+    if status is not None:    
+        package.status=status
+    
     session.commit()
 
     response={
@@ -114,22 +166,181 @@ def update_pack(id,name,destination,weight,arrival_date,status):
     session.close()
     return response
 
-def delete_paackage(id):
+
+def delete_package(id):
     session=Session(engine)
     package=session.get(Package,id)
     if package is None:
+          session.close()
           raise HTTPException(status_code=404,detail="Package Not Found")
     if package.status != "dispatched":
+        response={
+                "id":package.id,
+                "name":package.name,
+                "destination":package.destination,
+                "weight":package.weight,
+                "arrival_date":package.arrival_date,
+                "status":package.status,
+            }
         session.delete(package)
         session.commit()
         session.close()
+        return response
+    session.close()
+    raise HTTPException(status_code=409,detail="alreday dispatched")
 
-def add_data(vehicle,destination,dstatus,package_id):
+
+def search_pack(destination,status,arrival_date):
+    try:
+        arrival_date=datetime.strptime(arrival_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422,detail="Invalid date formate YYYY-MM-DD") 
     session=Session(engine)
-    package=session.get(Package,package_id)
+    
+    packages=session.query(Package).all()       
+    response=[]
+    for package in packages:
+        if ((destination is None or package.destination==destination) and 
+            (status is None or package.status==status) and 
+            (arrival_date is None or package.arrival_date==arrival_date)):  
+            res={
+                    "id":package.id,
+                    "name":package.name,
+                    "destination":package.destination,
+                    "weight":package.weight,
+                    "arrival_date":package.arrival_date,
+                    "status":package.status,
+                    }
+            response.append(res)
+    session.close()
+    return response
+
+def get_batch(destination=None,vehicle=None,dstatus=None):
+    session=Session(engine)
+
+    dispatchs=session.query(Dispatch).all()       
+    response=[]
+    for dispatch in dispatchs:
+        id=[]
+        packs=session.query(Package).filter(Package.d_id==dispatch.id).all()
+        for p in packs:
+            id.append(p.id)
+        if ((destination is None or dispatch.destination==destination) and 
+                (dstatus is None or dispatch.dstatus==dstatus) and 
+                (vehicle is None or dispatch.vehicle==vehicle)):
+            res={
+                 "id":dispatch.id,
+                 "vehicle":dispatch.vehicle,
+                "destination":dispatch.destination,
+                "dstatus":dispatch.dstatus,
+                "Package_id":id,
+            }   
+            response.append(res)
+    session.close()
+    return response
+
+def get_package_stats():
+    session=Session(engine)
+    total_pack=session.query(Package).count()
+    pending=session.query(Package).filter(Package.status=="pending").count()
+    dispatched=session.query(Package).filter(Package.status=="dispatched").count()
+    counts = {}
+    packages = session.query(Package).all()
+    for package in packages:
+        if package.destination in counts:
+            counts[package.destination] = counts[package.destination] + 1
+        else:
+            counts[package.destination] = 1
+    session.close()
+    responce={
+        "total_Package":total_pack,
+        "Pending_Package":pending,
+        "Dispatched_Paackage":dispatched,
+        "Destination_count":counts
+    }
+    return responce
+
+def add_dispatch(vehicle,destination,dstatus,package_id):
+    id=package_id
+    session=Session(engine)
+    package=session.get(Package,id)
     if package is None:
-         session.close()
-         
-     
+        session.close()
+        raise HTTPException(status_code=404,detail="Package not found")
+    if package.status == "dispatched":
+        session.close()
+        raise HTTPException(status_code=409,detail="Package already dispatched")
+    if package.destination!= destination:
+        session.close()
+        raise HTTPException(status_code=400,detail="bad request destination")
+
+    dispatch=Dispatch(vehicle=vehicle ,destination=destination,dstatus=dstatus)
+    session.add(dispatch)
+    session.commit()  
+    package.d_id=dispatch.id
+    package.status="dispatched"
+    session.commit() 
+    response={
+        "id":dispatch.id,
+        "vehicle":dispatch.vehicle,
+        "destination":dispatch.destination,
+        "package_id":package.id
+    }  
+    session.close()
+    return response
 
 
+def verify_login(username,password):
+    session=Session(engine)
+    user=session.query(User).filter_by(username=username).first()
+    if user is None:
+        session.close()
+        return False
+    try:
+        ph.verify(user.password,password)
+    except VerifyMismatchError:
+        session.close()
+        return False
+    session.close()
+    access_token=creat_token(username=username,token_type="access")
+    refresh_token=creat_token(username=username,token_type="refresh")
+    return {"access_token":access_token,"refresh_token":refresh_token}
+    
+def creat_token(username,token_type):
+    time =ACCEESS_TOKEN_EXPIRY
+    if token_type =="refresh":
+        time=REFRESH_TOKEN_EXPIRY
+    payload={
+        "username":username,
+        "token_type":token_type,
+        "exp": datetime.now(timezone.utc)+timedelta(minutes=time),
+    }
+    token = jwt.encode(payload=payload, key = SECRET_KEY,algorithm=ALGORITHM)
+    return token
+
+def verify_token(token,token_type):
+    try:
+        payload=jwt.decode(jwt=token, key=SECRET_KEY,algorithms=[ALGORITHM])
+        
+    except:
+        return False
+
+    if payload["token_type"]==token_type:
+        return payload["username"]
+    return False
+
+
+
+
+
+
+def register_user(username,password,user_type):
+    session = Session(engine)
+    user=session.query(User).filter_by(username=username).first()
+    if user is not None:
+        session.close()
+        return False
+    session.add(User(username=username,password=ph.hash(password),user_type=user_type))
+    session.commit()
+    session.close()
+    return True
