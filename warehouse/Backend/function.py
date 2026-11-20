@@ -1,6 +1,11 @@
 #Token JWT
 #hashing to encode the password in the DB "Salt" will make sure that different ppl will have different code
 
+
+#requests liberary helps in the testing of the backend like swagger
+#
+#
+
 from sqlalchemy import create_engine,Integer,String,Date,Column,ForeignKey
 from sqlalchemy.orm import Session,declarative_base
 from fastapi import FastAPI,HTTPException
@@ -9,7 +14,7 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from pydantic import BaseModel,Field
-from typing import Optional
+from typing import Optional         
 
 ph=PasswordHasher()
 
@@ -47,8 +52,10 @@ class DispatchIn(BaseModel):
     dstatus: str
     package_ids: list[int]=Field(min_length=1)
 
-
-        
+class UserIn(BaseModel):  
+    username:str
+    user_type:str
+    password:str      
 
 class User(Base):
     __tablename__="User"
@@ -348,7 +355,7 @@ def verify_token(token,token_type):
 
 
 def register_user(username,password,user_type):
-    if user_type not in ["owner","dispatcher"]:
+    if user_type not in ["manager","dispatcher"]:
             raise HTTPException(status_code=422,detail="incorrect user type")
     session = Session(engine)
     user=session.query(User).filter_by(username=username).first()

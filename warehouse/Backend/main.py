@@ -13,7 +13,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/package")
+@app.post("/register")
+def registar_user(u:function.UserIn):
+    if function.register_user(username=u.username,password=u.password,user_type=u.user_type):
+        return {"messege":"User registered successful"}
+    raise HTTPException(status_code=400,detail="User_Name alreday exists")
+
+@app.post("/login")
+def login(username = Body(),password = Body()):
+    token=function.verify_login(username=username,password=password)
+    if not token:
+        raise HTTPException(status_code=401,detail="Access denied")
+    return token
+
+@app.post("/refresh")
+def refresh(refresh_token=Header(None)):
+    payload=function.verify_token(token=refresh_token,token_type="refresh")
+    if not payload:
+        raise HTTPException(status_code=401,detail="Invalid or Expired refresh token")
+    access_token=function.creat_token(username=payload["username"],user_type=payload["user_type"],token_type="access")
+    return {"access_token":access_token}
+
+
+
+@app.post("/registerpackage")
 def register_package(p: function.PackageIn, token=Header(None)):
     payload = function.verify_token(token=token,token_type="access")
     if not payload:
@@ -27,8 +50,8 @@ def get_package(id:int,token=Header(None)):
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
     return function.get_package(id)
 
-@app.get("/package")
-def search(destination:Optional[str],status:Optional[str],arrival_date:Optional[date],token=Header(None)):
+@app.get("/search")
+def search(destination:Optional[str]=None,status:Optional[str]=None,arrival_date:Optional[date]=None,token=Header(None)):
     payload = function.verify_token(token=token,token_type="access")
     if not payload:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
@@ -54,7 +77,7 @@ def delete_package(id:int,token=Header(None)):
     payload = function.verify_token(token=token,token_type="access")
     if not payload:
         raise HTTPException(status_code=401,detail="Invalid or Expired token")
-    if payload["user_type"] != "owner":
+    if payload["user_type"] != "manager":
         raise HTTPException(status_code=403, detail="Not allowed for your role")
     return function.delete_package(id)
 
@@ -70,8 +93,8 @@ def get_stats(token=Header(None)):
     payload = function.verify_token(token=token, token_type="access")
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or Expired token")
-    if payload["user_type"] != "owner":
-        raise HTTPException(status_code=403, detail="Not allowed for your role")
+    if payload["user_type"] != "manager":
+        raise HTTPException(status_code=403, detail="Forbiden for your role")
     return function.get_package_stats()  
 
 @app.post("/dispatch")
@@ -81,26 +104,11 @@ def add_dispatch(d:function.DispatchIn,token=Header(None)):
         raise HTTPException(status_code=401, detail="Invalid or Expired token")
     return function.add_dispatch(d.vehicle,d.destination,d.dstatus,d.package_ids)
 
-@app.post("/login")
-def login(username = Body(),password = Body()):
-    token=function.verify_login(username=username,password=password)
-    if not token:
-        raise HTTPException(status_code=401,detail="Access denied")
-    return token
 
 
-@app.post("/refresh")
-def refresh(refresh_token=Header(None)):
-    payload=function.verify_token(token=refresh_token,token_type="refresh")
-    if not payload:
-        raise HTTPException(status_code=401,detail="Invalid or Expired refresh token")
-    access_token=function.creat_token(username=payload["username"],user_type=payload["user_type"],token_type="access")
-    return {"access_token":access_token}
 
 
-@app.post("/register")
-def registar_user(username=Body(),password=Body(),user_type=Body()):
-    if function.register_user(username=username,password=password,user_type=user_type):
-        return {"messege":"User registered successful"}
-    raise HTTPException(status_code=400,detail="User_Name alreday exists")
+
+
+
     
