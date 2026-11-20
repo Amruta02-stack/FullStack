@@ -171,8 +171,8 @@ def add_donor(roll_no, name, blood_group, weight_kg,last_donated_on=None):
     
     if blood_group not in ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]:
         raise HTTPException(status_code=422, detail="Invalid blood group.")
-    if weight_kg < 50 or weight_kg > 200:
-        raise HTTPException(status_code=422, detail="Weight must between  50kg to 200kg.")
+    # if weight_kg < 50 or weight_kg > 200:
+    #     raise HTTPException(status_code=422, detail="Weight must between  50kg to 200kg.")
 
     
 
